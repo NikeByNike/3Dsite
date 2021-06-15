@@ -17,8 +17,9 @@ const env = {
     raiseHeight: 0.2,
     raiseSpeed: 0.008,
     raiseSpeedSlowMult: 4,
-    colorStr: 0x00ff00,
-    color: new THREE.Color( 0x00ff00 ),
+    plainColor: 0x00ff00,
+    starsColor: 0xffffff,
+    starSize: 0.1,
     defaultColorIntensity: 0.1,
     enableDots: true,
 }
@@ -90,20 +91,23 @@ scene.add(ambientLight);
  */
 const gui = new dat.GUI()
 
-gui.add(env, 'width').min(100).max(500).step(10).onChange(hardUpdate);
-gui.add(env, 'length').min(100).max(500).step(10).onChange(hardUpdate);
-gui.add(env, 'pointSize').min(0.01).max(1).step(0.01).onChange(update);
+const planeFolder = gui.addFolder('Plane');
+const starsFolder = gui.addFolder('Stars');
+
+planeFolder.add(env, 'width').min(100).max(500).step(10).onFinishChange(hardUpdate);
+planeFolder.add(env, 'length').min(100).max(500).step(10).onFinishChange(hardUpdate);
+planeFolder.add(env, 'pointSize').min(0.01).max(1).step(0.01).onChange(update);
+planeFolder.add(env, 'raiseRadius').min(0.01).max(1).step(0.01);
+planeFolder.add(env, 'raiseHeight').min(0.01).max(5).step(0.01);
+planeFolder.add(env, 'raiseSpeed').min(0.0001).max(0.01);
+planeFolder.add(env, 'raiseSpeedSlowMult').min(1).max(10);
+planeFolder.addColor(env, 'plainColor').onFinishChange(hardUpdate);
+planeFolder.add(env, 'defaultColorIntensity').min(0.01).max(1).onFinishChange(hardUpdate);
+planeFolder.add(env, 'enableDots').onFinishChange(hardUpdate);
+starsFolder.addColor(env, 'starsColor').onFinishChange(hardUpdate);
+starsFolder.add(env, 'starSize').min(0.01).max(1).onFinishChange(update);
 gui.add(env, 'threshold').min(0.1).max(1).step(0.1).onChange(update);
-gui.add(env, 'raiseRadius').min(0.01).max(1).step(0.01);
-gui.add(env, 'raiseHeight').min(0.01).max(5).step(0.01);
-gui.add(env, 'raiseSpeed').min(0.0001).max(0.01);
-gui.add(env, 'raiseSpeedSlowMult').min(1).max(10);
-gui.addColor(env, 'colorStr').onChange((color) => {
-        env.color = new THREE.Color(color);
-});
-gui.add(env, 'defaultColorIntensity').min(0.01).max(1).onChange(hardUpdate);
 gui.add({hardUpdate}, 'hardUpdate');
-gui.add(env, 'enableDots').onChange(hardUpdate);
 
 
 /**
@@ -111,9 +115,14 @@ gui.add(env, 'enableDots').onChange(hardUpdate);
  */
 function update() {
     plane.material.size = env.pointSize;
+    stars.material.size = env.starSize;
     raycaster.params.Points.threshold = env.threshold
 }
 function hardUpdate() {
+    plane.geometry.dispose();
+    plane.material.dispose();
+    stars.geometry.dispose();
+    stars.material.dispose();
     scene.remove(plane);
     scene.remove(stars);
     init();
@@ -126,15 +135,10 @@ function hardUpdate() {
  */
 let plane, stars;
 function init() {
-    stars = new THREE.Group();
-    new Array(200).fill().map(() => {
-        const star = createStar();
-
-        stars.add(star);
-    });
+    stars = generateStars(new THREE.Color(env.starsColor), 500);
     scene.add( stars );
 
-    plane = generatePlane( env.color, env.width, env.length );
+    plane = generatePlane( new THREE.Color(env.plainColor), env.width, env.length );
     plane.scale.set( 100, 100, 40 );
     plane.position.set( 0, 0, 0 );
     plane.rotation.set( - Math.PI * 0.5, 0, 0 );
@@ -168,6 +172,7 @@ function animation() {
             intersectionY = intersection.uv.y - 0.5;
         }
     }
+    const color = new THREE.Color(env.plainColor);
     for (let i = 0; i < env.width * env.length; i++) {
         let x = plane.geometry.attributes.position.array[i * 3];
         let y = plane.geometry.attributes.position.array[i * 3+1];
@@ -190,9 +195,9 @@ function animation() {
         // plane.material.color.r = env.color.r * intensity;
         // plane.material.color.g = env.color.g * intensity;
         // plane.material.color.b = env.color.b * intensity;
-        plane.geometry.attributes.color.array[i * 3] = intensity * env.color.r;
-        plane.geometry.attributes.color.array[i * 3+1] = intensity * env.color.g;
-        plane.geometry.attributes.color.array[i * 3+2] = intensity * env.color.b;
+        plane.geometry.attributes.color.array[i * 3] = intensity * color.r;
+        plane.geometry.attributes.color.array[i * 3+1] = intensity * color.g;
+        plane.geometry.attributes.color.array[i * 3+2] = intensity * color.b;
     }
     plane.geometry.attributes.position.needsUpdate = needsUpdate;
     plane.geometry.attributes.color.needsUpdate = needsUpdate;
@@ -213,9 +218,6 @@ animation();
 /**
  * Helpers
  */
-function random(min, max) {
-    return THREE.MathUtils.randFloat(min, max);
-}
 function getZbyDot(dot1, dot2) {
     const [x1, y1] = dot1;
     const [x2, y2] = dot2;
@@ -231,17 +233,31 @@ function getZbyDot(dot1, dot2) {
     }
     return 0;
 }
-function createStar() {
-    const geometry = new THREE.SphereGeometry( 0.1);
-    const material = new THREE.MeshBasicMaterial({color: 0xffffff, wireframe: true});
+function generateStars( color, count ) {
+    const geometry = new THREE.BufferGeometry();
+    const points = new Float32Array( count * 3);
+    for (let i = 0; i < count; i++) {
+        const i3 = i * 3;
+        points[i3] = (Math.random() - 0.5) * 100;
+        points[i3+1] = (Math.random() - 0.5) * 100;
+        points[i3+2] = (Math.random() - 0.5) * 100;
+    }
+    const colors = new Float32Array( count * 3);
+    const {r,g,b} = color;
+    for (let i = 0; i < count; i++) {
+        const i3 = i * 3;
+        colors[i3] = r;
+        colors[i3+1] = g;
+        colors[i3+2] = b;
+    }
+    geometry.setAttribute( 'position', new THREE.BufferAttribute( points, 3 ) );
+    geometry.setAttribute( 'color', new THREE.BufferAttribute( colors, 3 ) );
+    geometry.size = env.starSize;
+    geometry.vertexColors = true;
 
-    const item = new THREE.Mesh(geometry, material);
+    const material = new THREE.PointsMaterial( { size: env.pointSize, vertexColors: true } );
+    return new THREE.Points( geometry, material );
 
-    const coordinates = Array(3).fill().map(() => random(-50, 50));
-
-    item.position.set(...coordinates);
-
-    return item;
 }
 function generatePlane( color, width, length ) {
     const geometry = new THREE.PlaneGeometry(1, 1, width, length);
